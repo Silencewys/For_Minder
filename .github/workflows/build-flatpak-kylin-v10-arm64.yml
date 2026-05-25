@@ -1,0 +1,96 @@
+name: Build Flatpak ARM64 local APT repo for Kylin V10
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    container: ubuntu:20.04
+
+    steps:
+      - name: Prepare Ubuntu 20.04 arm64 package sources
+        run: |
+          set -eux
+          export DEBIAN_FRONTEND=noninteractive
+
+          cat > /etc/apt/sources.list <<'EOF'
+          deb http://ports.ubuntu.com/ubuntu-ports focal main restricted universe multiverse
+          deb http://ports.ubuntu.com/ubuntu-ports focal-updates main restricted universe multiverse
+          deb http://ports.ubuntu.com/ubuntu-ports focal-security main restricted universe multiverse
+          EOF
+
+          cat > /etc/apt/sources.list.d/flatpak-stable-ppa.list <<'EOF'
+          deb [trusted=yes] https://ppa.launchpadcontent.net/flatpak/stable/ubuntu focal main
+          EOF
+
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl dpkg-dev apt-rdepends zip
+
+      - name: Download Flatpak and recursive dependencies
+        run: |
+          set -eux
+          export DEBIAN_FRONTEND=noninteractive
+
+          mkdir -p flatpak-localrepo/pool flatpak-localrepo/logs
+
+          apt-cache depends --recurse \
+            --no-recommends --no-suggests \
+            --no-conflicts --no-breaks \
+            --no-replaces --no-enhances \
+            flatpak \
+            | awk '/^[A-Za-z0-9][A-Za-z0-9+.-]+$/{print $1}' \
+            | sort -u > flatpak-localrepo/logs/package-list.txt
+
+          echo flatpak >> flatpak-localrepo/logs/package-list.txt
+          echo libflatpak0 >> flatpak-localrepo/logs/package-list.txt
+          sort -u flatpak-localrepo/logs/package-list.txt -o flatpak-localrepo/logs/package-list.txt
+
+          cd flatpak-localrepo/pool
+          while read pkg; do
+            echo "Downloading $pkg"
+            apt-get download "$pkg" || echo "$pkg" >> ../logs/download-failed.txt
+          done < ../logs/package-list.txt
+
+          cd ..
+          dpkg-scanpackages pool /dev/null > Packages
+          gzip -9c Packages > Packages.gz
+
+          cat > README_INSTALL_ON_KYLIN.txt <<'EOF'
+          在银河麒麟 V10 arm64 上离线安装 Flatpak：
+
+          1. 把整个 flatpak-localrepo 文件夹复制到 U 盘。
+          2. 在麒麟电脑打开终端，进入 U 盘中 flatpak-localrepo 的上一级目录。
+          3. 执行：
+
+             sudo mkdir -p /opt/flatpak-localrepo
+             sudo cp -a flatpak-localrepo/* /opt/flatpak-localrepo/
+
+             echo "deb [trusted=yes] file:/opt/flatpak-localrepo ./" | sudo tee /etc/apt/sources.list.d/flatpak-localrepo.list
+
+             sudo apt-get update \
+               -o Dir::Etc::sourcelist="sources.list.d/flatpak-localrepo.list" \
+               -o Dir::Etc::sourceparts="-" \
+               -o APT::Get::List-Cleanup="0"
+
+             sudo apt-get install -y --no-download \
+               -o Dir::Etc::sourcelist="sources.list.d/flatpak-localrepo.list" \
+               -o Dir::Etc::sourceparts="-" \
+               flatpak
+
+          4. 检查：
+
+             flatpak --version
+
+          5. 如果成功，再继续安装 Minder 离线包。
+          EOF
+
+          cd ..
+          zip -r flatpak-localrepo-kylin-v10-arm64.zip flatpak-localrepo
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flatpak-localrepo-kylin-v10-arm64
+          path: flatpak-localrepo-kylin-v10-arm64.zip
+          retention-days: 7
