@@ -1,0 +1,48 @@
+name: Build Minder ARM64 Offline Flatpak
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Show architecture
+        run: |
+          uname -m
+          dpkg --print-architecture || true
+
+      - name: Install Flatpak tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak curl zip
+
+      - name: Show Flatpak supported architectures
+        run: |
+          flatpak --supported-arches
+
+      - name: Add Flathub
+        run: |
+          sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak remote-modify --collection-id=org.flathub.Stable flathub
+
+      - name: Install Minder from Flathub
+        run: |
+          sudo flatpak install -y flathub com.github.phase1geo.minder
+          sudo flatpak info com.github.phase1geo.minder
+
+      - name: Create offline USB repository
+        run: |
+          mkdir -p minder-offline
+          sudo flatpak create-usb "$PWD/minder-offline" com.github.phase1geo.minder
+          curl -L -o minder-offline/flathub.flatpakrepo https://dl.flathub.org/repo/flathub.flatpakrepo
+          sudo chown -R "$USER:$USER" minder-offline
+          zip -r minder-offline-arm64.zip minder-offline
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: minder-offline-arm64
+          path: minder-offline-arm64.zip
+          retention-days: 7
