@@ -14,18 +14,27 @@ jobs:
           set -eux
           export DEBIAN_FRONTEND=noninteractive
 
+          # 第一步：只使用 Ubuntu 官方 HTTP 源，先安装证书工具。
+          # 注意：不要在安装 ca-certificates 之前访问 HTTPS PPA。
           cat > /etc/apt/sources.list <<'EOF'
           deb http://ports.ubuntu.com/ubuntu-ports focal main restricted universe multiverse
           deb http://ports.ubuntu.com/ubuntu-ports focal-updates main restricted universe multiverse
           deb http://ports.ubuntu.com/ubuntu-ports focal-security main restricted universe multiverse
           EOF
 
+          rm -f /etc/apt/sources.list.d/*.list
+
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl gnupg dpkg-dev apt-rdepends zip
+          update-ca-certificates || true
+
+          # 第二步：证书装好后，再添加 Flatpak stable PPA。
+          # 这里用 http，避免极简容器里再次遇到 TLS/证书问题。
           cat > /etc/apt/sources.list.d/flatpak-stable-ppa.list <<'EOF'
-          deb [trusted=yes] https://ppa.launchpadcontent.net/flatpak/stable/ubuntu focal main
+          deb [trusted=yes] http://ppa.launchpadcontent.net/flatpak/stable/ubuntu focal main
           EOF
 
           apt-get update
-          apt-get install -y --no-install-recommends ca-certificates curl dpkg-dev apt-rdepends zip
 
       - name: Download Flatpak and recursive dependencies
         run: |
@@ -33,6 +42,8 @@ jobs:
           export DEBIAN_FRONTEND=noninteractive
 
           mkdir -p flatpak-localrepo/pool flatpak-localrepo/logs
+
+          apt-cache policy flatpak | tee flatpak-localrepo/logs/flatpak-policy.txt
 
           apt-cache depends --recurse \
             --no-recommends --no-suggests \
@@ -81,8 +92,6 @@ jobs:
           4. 检查：
 
              flatpak --version
-
-          5. 如果成功，再继续安装 Minder 离线包。
           EOF
 
           cd ..
