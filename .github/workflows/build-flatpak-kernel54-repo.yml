@@ -1,0 +1,107 @@
+name: Build Kernel 5.4 Compatible Flatpak Repo for Kylin V10
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    container: ubuntu:20.04
+
+    steps:
+      - name: Prepare Ubuntu 20.04 official arm64 sources
+        run: |
+          set -eux
+          export DEBIAN_FRONTEND=noninteractive
+
+          cat > /etc/apt/sources.list <<'EOF'
+          deb http://ports.ubuntu.com/ubuntu-ports focal main restricted universe multiverse
+          deb http://ports.ubuntu.com/ubuntu-ports focal-updates main restricted universe multiverse
+          deb http://ports.ubuntu.com/ubuntu-ports focal-security main restricted universe multiverse
+          EOF
+
+          rm -f /etc/apt/sources.list.d/*.list
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates dpkg-dev apt-rdepends zip
+
+      - name: Download official Ubuntu 20.04 Flatpak and dependencies
+        run: |
+          set -eux
+          mkdir -p flatpak-kernel54-repo/pool flatpak-kernel54-repo/logs
+
+          apt-cache policy flatpak libflatpak0 bubblewrap ostree libostree-1-1 xdg-dbus-proxy | tee flatpak-kernel54-repo/logs/policy.txt
+
+          {
+            echo flatpak
+            echo libflatpak0
+            echo bubblewrap
+            echo ostree
+            echo libostree-1-1
+            echo xdg-dbus-proxy
+            apt-cache depends --recurse \
+              --no-recommends --no-suggests \
+              --no-conflicts --no-breaks \
+              --no-replaces --no-enhances \
+              flatpak libflatpak0 bubblewrap ostree libostree-1-1 xdg-dbus-proxy \
+              | awk '/^[A-Za-z0-9][A-Za-z0-9+.-]+$/{print $1}'
+          } | sort -u > flatpak-kernel54-repo/logs/package-list.txt
+
+          cd flatpak-kernel54-repo/pool
+          while read pkg; do
+            echo "Downloading $pkg"
+            apt-get download "$pkg" || echo "$pkg" >> ../logs/download-failed.txt
+          done < ../logs/package-list.txt
+
+          cd ..
+          dpkg-scanpackages pool /dev/null > Packages
+          gzip -9c Packages > Packages.gz
+
+          cat > README_INSTALL_ON_KYLIN.txt <<'EOF'
+          目的：
+          把银河麒麟 V10 arm64 上的 Flatpak 1.16.x 降级为 Ubuntu 20.04 官方版 Flatpak，
+          以避免 5.4 内核不支持 STATX_MNT_ID 导致的：
+          statx didn't return all required fields: 没有可用的数据
+
+          用法：
+          1. 把整个 flatpak-kernel54-repo 文件夹复制到 U 盘。
+          2. 在麒麟电脑上，把该文件夹复制到 /opt：
+
+             sudo rm -rf /opt/flatpak-kernel54-repo
+             sudo cp -a flatpak-kernel54-repo /opt/
+
+          3. 添加本地源：
+
+             echo "deb [trusted=yes] file:///opt/flatpak-kernel54-repo ./" | sudo tee /etc/apt/sources.list.d/flatpak-kernel54-repo.list
+
+          4. 只更新本地源：
+
+             sudo apt-get update \
+               -o Dir::Etc::sourcelist="sources.list.d/flatpak-kernel54-repo.list" \
+               -o Dir::Etc::sourceparts="-" \
+               -o APT::Get::List-Cleanup="0"
+
+          5. 降级/安装 Flatpak 兼容版：
+
+             sudo apt-get install -y --allow-downgrades \
+               -o Dir::Etc::sourcelist="sources.list.d/flatpak-kernel54-repo.list" \
+               -o Dir::Etc::sourceparts="-" \
+               flatpak libflatpak0 bubblewrap ostree libostree-1-1 xdg-dbus-proxy
+
+          6. 检查：
+
+             flatpak --version
+
+          7. 然后重新运行：
+
+             flatpak run com.github.phase1geo.minder
+          EOF
+
+          cd ..
+          zip -r flatpak-kernel54-repo.zip flatpak-kernel54-repo
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flatpak-kernel54-repo
+          path: flatpak-kernel54-repo.zip
+          retention-days: 7
