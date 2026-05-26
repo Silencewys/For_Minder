@@ -1,4 +1,4 @@
-name: Build Minder ARM64 Flatpak Bundle
+name: Build Minder ARM64 Flatpak Bundles
 
 on:
   workflow_dispatch:
@@ -16,18 +16,28 @@ jobs:
       - name: Install Flatpak tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak ca-certificates
+          sudo apt-get install -y flatpak ca-certificates zip
 
       - name: Add Flathub
         run: |
           flatpak --user remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
-      - name: Install Minder ARM64 from Flathub
+      - name: Install Minder and runtime
         run: |
+          flatpak --user install -y --arch=aarch64 flathub org.gnome.Platform//49
           flatpak --user install -y --arch=aarch64 flathub com.github.phase1geo.minder
+          flatpak --user info org.gnome.Platform//49
           flatpak --user info com.github.phase1geo.minder
 
-      - name: Create Flatpak bundle
+      - name: Create runtime bundle
+        run: |
+          flatpak build-bundle \
+            ~/.local/share/flatpak/repo \
+            org.gnome.Platform-49-arm64.flatpak \
+            org.gnome.Platform \
+            49
+
+      - name: Create Minder bundle
         run: |
           flatpak build-bundle \
             ~/.local/share/flatpak/repo \
@@ -35,9 +45,15 @@ jobs:
             com.github.phase1geo.minder \
             stable
 
+      - name: Package bundles
+        run: |
+          zip Minder-2.0.9-arm64-with-runtime.zip \
+            org.gnome.Platform-49-arm64.flatpak \
+            Minder-2.0.9-arm64.flatpak
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Minder-2.0.9-arm64
-          path: Minder-2.0.9-arm64.flatpak
+          name: Minder-2.0.9-arm64-with-runtime
+          path: Minder-2.0.9-arm64-with-runtime.zip
           retention-days: 7
