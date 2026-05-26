@@ -1,4 +1,4 @@
-name: Build Minder ARM64 Offline Flatpak
+name: Build Minder ARM64 Flatpak Bundle
 
 on:
   workflow_dispatch:
@@ -16,33 +16,28 @@ jobs:
       - name: Install Flatpak tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak curl zip
-
-      - name: Show Flatpak supported architectures
-        run: |
-          flatpak --supported-arches
+          sudo apt-get install -y flatpak ca-certificates
 
       - name: Add Flathub
         run: |
-          sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-          sudo flatpak remote-modify --collection-id=org.flathub.Stable flathub
+          flatpak --user remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
-      - name: Install Minder from Flathub
+      - name: Install Minder ARM64 from Flathub
         run: |
-          sudo flatpak install -y flathub com.github.phase1geo.minder
-          sudo flatpak info com.github.phase1geo.minder
+          flatpak --user install -y --arch=aarch64 flathub com.github.phase1geo.minder
+          flatpak --user info com.github.phase1geo.minder
 
-      - name: Create offline USB repository
+      - name: Create Flatpak bundle
         run: |
-          mkdir -p minder-offline
-          sudo flatpak create-usb "$PWD/minder-offline" com.github.phase1geo.minder
-          curl -L -o minder-offline/flathub.flatpakrepo https://dl.flathub.org/repo/flathub.flatpakrepo
-          sudo chown -R "$USER:$USER" minder-offline
-          zip -r minder-offline-arm64.zip minder-offline
+          flatpak build-bundle \
+            ~/.local/share/flatpak/repo \
+            Minder-2.0.9-arm64.flatpak \
+            com.github.phase1geo.minder \
+            stable
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: minder-offline-arm64
-          path: minder-offline-arm64.zip
+          name: Minder-2.0.9-arm64
+          path: Minder-2.0.9-arm64.flatpak
           retention-days: 7
