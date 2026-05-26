@@ -34,16 +34,14 @@ jobs:
           flatpak build-bundle \
             ~/.local/share/flatpak/repo \
             org.gnome.Platform-49-arm64.flatpak \
-            org.gnome.Platform \
-            49
+            runtime/org.gnome.Platform/aarch64/49
 
       - name: Create Minder bundle
         run: |
           flatpak build-bundle \
             ~/.local/share/flatpak/repo \
             Minder-2.0.9-arm64.flatpak \
-            com.github.phase1geo.minder \
-            stable
+            app/com.github.phase1geo.minder/aarch64/stable
 
       - name: Package bundles
         run: |
